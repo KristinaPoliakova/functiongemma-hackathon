@@ -1,10 +1,19 @@
 
 import sys, os
-sys.path.insert(0, "cactus/python/src")
+from pathlib import Path 
+# Challenge repo root (where this script lives)
+CHALLENGE_ROOT = Path(__file__).resolve().parent
+print(CHALLENGE_ROOT)
+# Cactus repo is a sibling folder → cactus/python/src
+CACTUS_SRC = CHALLENGE_ROOT.parent / "cactus" / "python" / "src"
+print(CACTUS_SRC)
+sys.path.insert(0, str(CACTUS_SRC))
+
 os.environ["CACTUS_NO_CLOUD_TELE"] = "1"
 
 import json
-from main import generate_hybrid
+import logging
+from main import generate_hybrid, log_event, compact_messages_for_log
 
 
 ############## Tool definitions ##############
@@ -403,10 +412,24 @@ def run_benchmark(benchmarks=None):
     total = len(benchmarks)
     results = []
     for i, case in enumerate(benchmarks, 1):
+        request_id = case["name"]
+        log_event(
+            logging.INFO, "benchmark_case_start", request_id=request_id,
+            case_index=i, total=total, difficulty=case["difficulty"],
+        )
         print(f"[{i}/{total}] Running: {case['name']} ({case['difficulty']})...", end=" ", flush=True)
-        result = generate_hybrid(case["messages"], case["tools"])
+        result = generate_hybrid(case["messages"], case["tools"], request_id=request_id)
         f1 = compute_f1(result["function_calls"], case["expected_calls"])
         source = result.get("source", "unknown")
+        log_event(
+            logging.INFO, "benchmark_case_complete", request_id=request_id,
+            difficulty=case["difficulty"], f1=round(f1, 4), source=source,
+            total_time_ms=round(result["total_time_ms"], 2), case_index=i,
+            input_messages=compact_messages_for_log(case["messages"]),
+            input_tool_names=[t.get("name", "") for t in case["tools"]],
+            predicted_calls=result["function_calls"],
+            expected_calls=case["expected_calls"],
+        )
         print(f"F1={f1:.2f} | {result['total_time_ms']:.0f}ms | {source}")
         results.append({
             "name": case["name"],
